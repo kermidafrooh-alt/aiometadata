@@ -37,6 +37,41 @@ const host = process.env.HOST_NAME?.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
+function getTopStreamingApiKey(config: any): string {
+  const apiKeys = config?.apiKeys || {};
+
+  return (
+    apiKeys.topPosters ||
+    apiKeys.top_posters ||
+    apiKeys.topStreaming ||
+    apiKeys.top_streaming ||
+    apiKeys.topPostersApiKey ||
+    apiKeys.top_streaming_api_key ||
+    process.env.TOP_POSTERS_API_KEY ||
+    process.env.TOP_STREAMING_API_KEY ||
+    ''
+  );
+}
+
+function getTopStreamingUpNextThumbnail(config: any, traktItem: any): string | null {
+  const apiKey = getTopStreamingApiKey(config);
+
+  const showImdbId =
+    traktItem?.show?.ids?.imdb ||
+    traktItem?.ids?.imdb ||
+    '';
+
+  const ep = traktItem?.upNextEpisode;
+  const season = ep?.season;
+  const episode = ep?.episode ?? ep?.number;
+
+  if (!apiKey || !showImdbId || season == null || episode == null) {
+    return null;
+  }
+
+  return `https://api.top-streaming.stream/${encodeURIComponent(apiKey)}/imdb/thumbnail/${showImdbId}/S${season}E${episode}.jpg`;
+}
+
 async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false, skip?: number): Promise<{ metas: any[] }> {
   try {
     if (id === 'tvdb.collections') {
@@ -1882,6 +1917,21 @@ async function getTraktCatalog(
     const useShowPoster = catalogConfig?.metadata?.useShowPosterForUpNext || false;
     logger.debug(`Up Next: useShowPosterForUpNext = ${useShowPoster}`);
     let metas = await parseTraktItems(response.items, type, language, config, includeVideos, useShowPoster);
+      if ((catalogId === 'trakt.upnext' || catalogId === 'trakt.up_next') && !useShowPoster) {
+  metas = metas.map((meta: any, index: number) => {
+    const topStreamingThumb = getTopStreamingUpNextThumbnail(config, response.items[index]);
+
+    if (!topStreamingThumb) {
+      return meta;
+    }
+
+    return {
+      ...meta,
+      poster: topStreamingThumb,
+      background: topStreamingThumb,
+    };
+  });
+}
     const parseTime = Date.now() - parseStart;
     logger.info(`Up Next: parseTraktItems took ${parseTime}ms for ${response.items.length} items`);
     
